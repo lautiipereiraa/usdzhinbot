@@ -1,33 +1,33 @@
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+import os
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+)
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from config import BOT_TOKEN
 from cotizaciones import (
     obtener_mejor_compra_venta_usd,
     obtener_mejor_compra_venta_btc,
     obtener_mejor_compra_venta_usdt,
     obtener_mejor_compra_venta_eth,
 )
-import pytz
-from datetime import time
+from dotenv import load_dotenv
 
-USUARIO_CHAT_ID = None
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 FUNCIONES_COTIZACION = {
     "usd": obtener_mejor_compra_venta_usd,
     "btc": obtener_mejor_compra_venta_btc,
     "usdt": obtener_mejor_compra_venta_usdt,
     "eth": obtener_mejor_compra_venta_eth,
-    "todos": None,
 }
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global USUARIO_CHAT_ID
-    USUARIO_CHAT_ID = update.effective_chat.id
 
-    nombre = update.effective_user.first_name or "amigo"
-    saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
-    
-    keyboard = [
+def crear_keyboard():
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("USD", callback_data="usd"),
             InlineKeyboardButton("BTC", callback_data="btc"),
@@ -39,42 +39,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("Todos", callback_data="todos"),
         ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(saludo, reply_markup=reply_markup)
+    ])
 
-async def enviar_mensaje_diario(context: ContextTypes.DEFAULT_TYPE):
-    if USUARIO_CHAT_ID is None:
-        return
-    
+
+def obtener_mensajes_cotizacion():
     mensajes = []
     for key, func in FUNCIONES_COTIZACION.items():
-        if func:
-            try:
-                mensajes.append(func())
-            except Exception as e:
-                mensajes.append(f"Error al obtener cotización {key.upper()}: {e}")
-    mensaje_final = "\n\n".join(mensajes)
+        try:
+            mensajes.append(func())
+        except Exception as e:
+            mensajes.append(f"Error al obtener cotización {key.upper()}: {e}")
+    return "\n\n".join(mensajes)
 
-    await context.bot.send_message(chat_id=USUARIO_CHAT_ID, text=mensaje_final, parse_mode="Markdown", disable_web_page_preview=True)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    context.bot_data["usuario_chat_id"] = chat_id
+
+    nombre = update.effective_user.first_name or "amigo"
+    saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
+
+    await update.message.reply_text(saludo, reply_markup=crear_keyboard())
+
+
+async def enviar_mensaje_diario(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.bot_data.get("usuario_chat_id")
+    if not chat_id:
+        return
+
+    mensaje = obtener_mensajes_cotizacion()
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=mensaje,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+    )
+
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
     data = query.data
+
     if data == "todos":
-        mensajes = []
-        for key, func in FUNCIONES_COTIZACION.items():
-            if func:
-                try:
-                    mensajes.append(func())
-                except Exception as e:
-                    mensajes.append(f"Error al obtener cotización {key.upper()}: {e}")
-        respuesta = "\n\n".join(mensajes)
+        respuesta = obtener_mensajes_cotizacion()
     else:
         func = FUNCIONES_COTIZACION.get(data)
-        if func is None:
+        if not func:
             respuesta = "Opción no válida."
         else:
             try:
@@ -82,21 +93,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 respuesta = f"Error al obtener cotización: {e}"
 
-    keyboard = [
-        [
-            InlineKeyboardButton("USD", callback_data="usd"),
-            InlineKeyboardButton("BTC", callback_data="btc"),
-        ],
-        [
-            InlineKeyboardButton("USDT", callback_data="usdt"),
-            InlineKeyboardButton("ETH", callback_data="eth"),
-        ],
-        [
-            InlineKeyboardButton("Todos", callback_data="todos"),
-        ],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text=respuesta, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=reply_markup)
+    await query.edit_message_text(
+        text=respuesta,
+        parse_mode="Markdown",
+        disable_web_page_preview=True,
+        reply_markup=crear_keyboard(),
+    )
+
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -104,12 +107,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    tz_buenos_aires = pytz.timezone("America/Argentina/Buenos_Aires")
-    hora_ejecucion = time(hour=8, minute=0, second=0, tzinfo=tz_buenos_aires)
-    app.job_queue.run_daily(enviar_mensaje_diario, time=hora_ejecucion)
-
     print("Bot iniciado...")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
