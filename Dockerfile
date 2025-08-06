@@ -1,18 +1,19 @@
-# Usa una imagen liviana de Python
 FROM python:3.11-slim
 
-# Establece el directorio de trabajo
 WORKDIR /app
 
-# Copia solo lo necesario
+RUN apt-get update && \
+    apt-get install -y tzdata && \
+    ln -sf /usr/share/zoneinfo/America/Argentina/Buenos_Aires /etc/localtime && \
+    echo "America/Argentina/Buenos_Aires" > /etc/timezone && \
+    dpkg-reconfigure -f noninteractive tzdata && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia el resto de la app
 COPY . .
 
-# Asegura que .env no sea accidentalmente expuesto
 RUN rm -f .env
 
-# Comando para iniciar el bot
 CMD ["python", "bot.py"]

@@ -1,11 +1,13 @@
 import os
+import pytz
+import datetime
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    MessageHandler, 
-    filters
+    MessageHandler,
+    filters,
 )
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from cotizaciones import (
@@ -19,6 +21,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+chat_ids_env = os.getenv("CHAT_IDS", "")
+if chat_ids_env.strip() == "":
+    CHAT_IDS = []
+else:
+    CHAT_IDS = [int(cid.strip()) for cid in chat_ids_env.split(",") if cid.strip().isdigit()]
+
+hora_envio_str = os.getenv("HORA_ENVIO", "16:00")  
+try:
+    hora, minuto = map(int, hora_envio_str.split(":"))
+except Exception:
+    print(f"⚠️ Formato de HORA_ENVIO inválido: '{hora_envio_str}', usando 16:00 por defecto.")
+    hora, minuto = 16, 0
 
 FUNCIONES_COTIZACION = {
     "usd": obtener_mejor_compra_venta_usd,
@@ -55,33 +70,29 @@ def obtener_mensajes_cotizacion():
 
 async def responder_a_saludos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensaje = update.message.text.lower()
-
     if any(saludo in mensaje for saludo in SALUDOS):
         nombre = update.effective_user.first_name or "amigo"
         saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
         await update.message.reply_text(saludo, reply_markup=crear_keyboard())
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    context.bot_data["usuario_chat_id"] = chat_id
-
     nombre = update.effective_user.first_name or "amigo"
     saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
-
     await update.message.reply_text(saludo, reply_markup=crear_keyboard())
 
 async def enviar_mensaje_diario(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.bot_data.get("usuario_chat_id")
-    if not chat_id:
-        return
-
     mensaje = obtener_mensajes_cotizacion()
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=mensaje,
-        parse_mode="Markdown",
-        disable_web_page_preview=True,
-    )
+    for chat_id in CHAT_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=mensaje,
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+            )
+            print(f"✅ Mensaje enviado a {chat_id}")
+        except Exception as e:
+            print(f"❌ Error enviando a {chat_id}: {e}")
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -107,14 +118,26 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=crear_keyboard(),
     )
 
+async def testjob(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await enviar_mensaje_diario(context)
+    await update.message.reply_text("✅ Mensaje enviado (test).")
+
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("testjob", testjob))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder_a_saludos))
 
-    print("Bot iniciado...")
+    job_queue = app.job_queue
+
+    argentina_tz = pytz.timezone("America/Argentina/Buenos_Aires")
+    hora_envio = datetime.time(hour=hora, minute=minuto, tzinfo=argentina_tz)
+
+    job_queue.run_daily(enviar_mensaje_diario, time=hora_envio)
+
+    print("🤖 Bot iniciado...")
     app.run_polling()
 
 if __name__ == "__main__":
