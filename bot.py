@@ -45,6 +45,8 @@ FUNCIONES_COTIZACION = {
 
 SALUDOS = {"hola", "buenas", "hey", "holi", "buen día", "buenas tardes", "buenas noches"}
 
+DESPEDIDAS = {"gracias", "chau", "nos vemos", "hasta luego", "adiós", "bye"}
+
 def crear_keyboard():
     return InlineKeyboardMarkup([
         [
@@ -78,6 +80,15 @@ async def responder_a_saludos(update: Update, context: ContextTypes.DEFAULT_TYPE
     mensaje = update.message.text.lower()
     if any(saludo in mensaje for saludo in SALUDOS):
         await enviar_saludo(update)
+
+async def responder_a_mensajes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensaje = update.message.text.lower()
+    if any(saludo in mensaje for saludo in SALUDOS):
+        await enviar_saludo(update)
+    elif any(despedida in mensaje for despedida in DESPEDIDAS):
+        nombre = update.effective_user.first_name or "amigo"
+        respuesta = f"¡De nada, {nombre}! Si necesitas más cotizaciones, aquí estaré. 👋"
+        await update.message.reply_text(respuesta)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await enviar_saludo(update)
@@ -124,7 +135,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("testjob", testjob))
     app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder_a_saludos))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder_a_mensajes))
 
     argentina_tz = ZoneInfo("America/Argentina/Buenos_Aires")
     hora_envio = datetime.time(hour=hora, minute=minuto, tzinfo=argentina_tz)
