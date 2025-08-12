@@ -12,6 +12,13 @@ API_ENDPOINTS = {
     "ETH": os.getenv("API_URL_ETH"),
 }
 
+CONFIG_MONEDAS = {
+    "USD": ("ask", "bid"),
+    "BTC": ("totalAsk", "totalBid"),
+    "USDT": ("totalAsk", "totalBid"),
+    "ETH": ("totalAsk", "totalBid"),
+}
+
 def formatear_mensaje(moneda, mejor_compra, mejor_venta, tipo_precio, tipo_precio_venta):
     timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
     return (
@@ -23,10 +30,15 @@ def formatear_mensaje(moneda, mejor_compra, mejor_venta, tipo_precio, tipo_preci
         f"💰 Precio: `${mejor_venta[tipo_precio_venta]:,.2f}`\n"
     )
 
-def obtener_mejor_compra_venta(moneda, tipo_precio='ask', tipo_precio_venta='bid'):
-    url = API_ENDPOINTS.get(moneda)
-    if not url:
+def obtener_mejor_compra_venta(moneda):
+    if moneda not in API_ENDPOINTS or not API_ENDPOINTS[moneda]:
         return f"⚠️ URL para {moneda} no configurada."
+    
+    if moneda not in CONFIG_MONEDAS:
+        return f"⚠️ Configuración de precios para {moneda} no encontrada."
+
+    tipo_precio, tipo_precio_venta = CONFIG_MONEDAS[moneda]
+    url = API_ENDPOINTS[moneda]
 
     try:
         response = requests.get(url, timeout=10)
@@ -52,22 +64,18 @@ def obtener_mejor_compra_venta(moneda, tipo_precio='ask', tipo_precio_venta='bid
         return f"❌ *Error inesperado* en {moneda}: `{e}`"
 
 def obtener_mejor_compra_venta_usd():
-    return obtener_mejor_compra_venta("USD", tipo_precio="ask", tipo_precio_venta="bid")
+    return obtener_mejor_compra_venta("USD")
 
 def obtener_mejor_compra_venta_btc():
-    return obtener_mejor_compra_venta("BTC", tipo_precio="totalAsk", tipo_precio_venta="totalBid")
+    return obtener_mejor_compra_venta("BTC")
 
 def obtener_mejor_compra_venta_usdt():
-    return obtener_mejor_compra_venta("USDT", tipo_precio="totalAsk", tipo_precio_venta="totalBid")
+    return obtener_mejor_compra_venta("USDT")
 
 def obtener_mejor_compra_venta_eth():
-    return obtener_mejor_compra_venta("ETH", tipo_precio="totalAsk", tipo_precio_venta="totalBid")
+    return obtener_mejor_compra_venta("ETH")
 
 if __name__ == "__main__":
-    print(obtener_mejor_compra_venta_usd())
-    print()
-    print(obtener_mejor_compra_venta_btc())
-    print()
-    print(obtener_mejor_compra_venta_usdt())
-    print()
-    print(obtener_mejor_compra_venta_eth())
+    for moneda in CONFIG_MONEDAS:
+        print(obtener_mejor_compra_venta(moneda))
+        print()

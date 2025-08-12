@@ -1,6 +1,6 @@
 import os
-import pytz
 import datetime
+from zoneinfo import ZoneInfo  
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -19,21 +19,22 @@ from cotizaciones import (
 from dotenv import load_dotenv
 
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-chat_ids_env = os.getenv("CHAT_IDS", "")
-if chat_ids_env.strip() == "":
-    CHAT_IDS = []
-else:
-    CHAT_IDS = [int(cid.strip()) for cid in chat_ids_env.split(",") if cid.strip().isdigit()]
+def cargar_config():
+    chat_ids_env = os.getenv("CHAT_IDS", "")
+    chat_ids = [int(cid.strip()) for cid in chat_ids_env.split(",") if cid.strip().isdigit()]
 
-hora_envio_str = os.getenv("HORA_ENVIO", "16:00")  
-try:
-    hora, minuto = map(int, hora_envio_str.split(":"))
-except Exception:
-    print(f"⚠️ Formato de HORA_ENVIO inválido: '{hora_envio_str}', usando 16:00 por defecto.")
-    hora, minuto = 16, 0
+    hora_envio_str = os.getenv("HORA_ENVIO", "16:00")
+    try:
+        hora, minuto = map(int, hora_envio_str.split(":"))
+    except ValueError:
+        print(f"⚠️ Formato de HORA_ENVIO inválido: '{hora_envio_str}', usando 16:00 por defecto.")
+        hora, minuto = 16, 0
+
+    return chat_ids, hora, minuto
+
+CHAT_IDS, hora, minuto = cargar_config()
 
 FUNCIONES_COTIZACION = {
     "usd": obtener_mejor_compra_venta_usd,
@@ -68,17 +69,18 @@ def obtener_mensajes_cotizacion():
             mensajes.append(f"Error al obtener cotización {key.upper()}: {e}")
     return "\n\n".join(mensajes)
 
-async def responder_a_saludos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje = update.message.text.lower()
-    if any(saludo in mensaje for saludo in SALUDOS):
-        nombre = update.effective_user.first_name or "amigo"
-        saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
-        await update.message.reply_text(saludo, reply_markup=crear_keyboard())
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def enviar_saludo(update: Update):
     nombre = update.effective_user.first_name or "amigo"
     saludo = f"Hola {nombre}! 👋\nSelecciona la moneda para ver el mejor precio:"
     await update.message.reply_text(saludo, reply_markup=crear_keyboard())
+
+async def responder_a_saludos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensaje = update.message.text.lower()
+    if any(saludo in mensaje for saludo in SALUDOS):
+        await enviar_saludo(update)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await enviar_saludo(update)
 
 async def enviar_mensaje_diario(context: ContextTypes.DEFAULT_TYPE):
     mensaje = obtener_mensajes_cotizacion()
@@ -103,13 +105,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         respuesta = obtener_mensajes_cotizacion()
     else:
         func = FUNCIONES_COTIZACION.get(data)
-        if not func:
-            respuesta = "Opción no válida."
-        else:
-            try:
-                respuesta = func()
-            except Exception as e:
-                respuesta = f"Error al obtener cotización: {e}"
+        respuesta = func() if func else "Opción no válida."
 
     await query.edit_message_text(
         text=respuesta,
@@ -130,12 +126,9 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder_a_saludos))
 
-    job_queue = app.job_queue
-
-    argentina_tz = pytz.timezone("America/Argentina/Buenos_Aires")
+    argentina_tz = ZoneInfo("America/Argentina/Buenos_Aires")
     hora_envio = datetime.time(hour=hora, minute=minuto, tzinfo=argentina_tz)
-
-    job_queue.run_daily(enviar_mensaje_diario, time=hora_envio)
+    app.job_queue.run_daily(enviar_mensaje_diario, time=hora_envio)
 
     print("🤖 Bot iniciado...")
     app.run_polling()
