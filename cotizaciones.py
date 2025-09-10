@@ -33,9 +33,9 @@ def formatear_mensaje(moneda, mejor_compra, mejor_venta, tipo_precio, tipo_preci
 def obtener_mejor_compra_venta(moneda):
     if moneda not in API_ENDPOINTS or not API_ENDPOINTS[moneda]:
         return f"⚠️ URL para {moneda} no configurada."
-    
+
     if moneda not in CONFIG_MONEDAS:
-        return f"⚠️ Configuración de precios para {moneda} no encontrada."
+        return f"⚠️ Configuración para {moneda} no encontrada."
 
     tipo_precio, tipo_precio_venta = CONFIG_MONEDAS[moneda]
     url = API_ENDPOINTS[moneda]
@@ -59,9 +59,9 @@ def obtener_mejor_compra_venta(moneda):
         return formatear_mensaje(moneda, mejor_compra, mejor_venta, tipo_precio, tipo_precio_venta)
 
     except requests.RequestException as e:
-        return f"❌ *Error de conexión* al obtener cotización de {moneda}: `{e}`"
+        return f"❌ *Error de conexión* {moneda}: `{e}`"
     except Exception as e:
-        return f"❌ *Error inesperado* en {moneda}: `{e}`"
+        return f"❌ *Error inesperado* {moneda}: `{e}`"
 
 def obtener_mejor_compra_venta_usd():
     return obtener_mejor_compra_venta("USD")
